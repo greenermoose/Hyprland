@@ -116,6 +116,13 @@ void CIdleNotifyProtocol::onActivity() {
 }
 
 void CIdleNotifyProtocol::setInhibit(bool inhibited) {
+    // Re-evaluations that do not change the inhibit state (every window focus
+    // change ends up here via recheckIdleInhibitorStatus) are not activity:
+    // do not reset the notifications or their timers.
+    if (isInhibited == inhibited) {
+        LOGM(Log::DEBUG, "idle: inhibit state unchanged ({}), ignoring", inhibited);
+        return;
+    }
     isInhibited = inhibited;
     for (auto const& n : m_notifications) {
         if (n->inhibitorsAreObeyed())
