@@ -42,6 +42,10 @@ namespace Monitor {
     class CMonitorFrameScheduler;
     class CMonitor;
 
+    // Drop the per-output "switched off individually" memory that onConnect()
+    // consults; called when DPMS is enabled compositor-wide.
+    void forgetDPMSOffOutputs();
+
     class CMonitorState {
       public:
         CMonitorState(CMonitor* owner);

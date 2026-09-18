@@ -61,6 +61,40 @@
 #include <ranges>
 #include <vector>
 #include <algorithm>
+#include <unordered_set>
+
+// DPMS bookkeeping shared by setDPMS(), onConnect() and onDisconnect().
+//
+// g_pCompositor->m_dpmsStateOn drives misc:mouse_move_enables_dpms and
+// misc:key_press_enables_dpms: any input while it is false turns every
+// monitor on. It used to be assigned by the dpms dispatcher from the last
+// monitor it touched, so blanking ONE monitor (`dpms off DP-3`, or a
+// wlr-output-power client, which never updated the flag at all) left it
+// false and the next mouse move re-lit that monitor from anywhere. It is
+// now derived here: false only when every enabled monitor is DPMS-off.
+//
+// s_dpmsOffOutputs remembers, by output name, monitors that were switched
+// off individually, so that a panel dropping HPD after losing signal and
+// reconnecting a second later (input auto-scan) comes back dark like its
+// peers do under the compositor-wide state. An unfiltered `dpms on` forgets
+// all of them; a per-monitor `dpms on` forgets that one.
+static std::unordered_set<std::string> s_dpmsOffOutputs;
+
+static void recheckCompositorDPMSState() {
+    bool anyEnabled = false, anyOn = false;
+    for (auto const& m : State::monitorState()->allMonitors()) {
+        if (!m->m_enabled)
+            continue;
+        anyEnabled = true;
+        if (m->m_dpmsStatus)
+            anyOn = true;
+    }
+    g_pCompositor->m_dpmsStateOn = !anyEnabled || anyOn;
+}
+
+void Monitor::forgetDPMSOffOutputs() {
+    s_dpmsOffOutputs.clear();
+}
 
 using namespace Hyprutils::String;
 using namespace Hyprutils::Utils;
@@ -305,9 +339,10 @@ void CMonitor::onConnect(bool noRule) {
     // DPMS is off — typically a panel that dropped HPD after losing signal and
     // reconnected — must not come up lit and must not retrain its link. Bring
     // it up disabled; the normal dpms-on paths enable it later.
-    m_dpmsStatus = g_pCompositor->m_dpmsStateOn;
+    m_dpmsStatus = g_pCompositor->m_dpmsStateOn && !s_dpmsOffOutputs.contains(m_name);
     if (!m_dpmsStatus)
-        Log::logger->log(Log::DEBUG, "Monitor {} connected while DPMS is off; bringing it up disabled", m_name);
+        Log::logger->log(Log::DEBUG, "Monitor {} connected while DPMS is off ({}); bringing it up disabled", m_name,
+                         g_pCompositor->m_dpmsStateOn ? "this output" : "compositor-wide");
 
     m_output->state->resetExplicitFences();
     m_output->state->setEnabled(m_dpmsStatus);
@@ -469,6 +504,8 @@ void CMonitor::onDisconnect(bool destroy) {
 
     m_enabled             = false;
     m_renderingInitPassed = false;
+
+    recheckCompositorDPMSState();
 
     std::vector<PHLWORKSPACE> wspToMove;
     for (auto const& w : State::workspaceState()->workspaces()) {
@@ -2321,6 +2358,11 @@ void CMonitor::setDPMS(bool on) {
         return;
 
     m_dpmsStatus = on;
+    if (on)
+        s_dpmsOffOutputs.erase(m_name);
+    else
+        s_dpmsOffOutputs.insert(m_name);
+    recheckCompositorDPMSState();
     m_events.dpmsChanged.emit();
 
     if (on) {

@@ -1252,8 +1252,16 @@ ActionResult Actions::dpms(eTogglableAction action, std::optional<PHLMONITOR> mo
         }
 
         m->setDPMS(enable);
-        g_pCompositor->m_dpmsStateOn = enable;
     }
+
+    // g_pCompositor->m_dpmsStateOn is derived in CMonitor::setDPMS() from the
+    // state of every enabled monitor; assigning it here from the last monitor
+    // touched made a per-monitor `dpms off` look compositor-wide, and the next
+    // mouse move anywhere re-lit that monitor. An unfiltered enable is the
+    // "everything on" intent, so it also forgets outputs that were switched
+    // off individually and are currently unplugged.
+    if (!mon.has_value() && action == TOGGLE_ACTION_ENABLE)
+        Monitor::forgetDPMSOffOutputs();
 
     Pointer::mgr()->recheckEnteredOutputs();
 
