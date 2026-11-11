@@ -2,7 +2,6 @@
 
 #include <hyprutils/cli/Logger.hpp>
 #include <utility>
-#include "DisplayLog.hpp"
 
 #include "../../helpers/memory/Memory.hpp"
 #include "../../helpers/env/Env.hpp"
@@ -42,7 +41,6 @@ namespace Log {
       private:
         void                    recheckCfg();
 
-        Tamlinux::CDisplayLog   m_display;
         Hyprutils::CLI::CLogger m_logger;
         bool                    m_logsEnabled = true;
         bool                    m_isTrace     = false;
