@@ -2,6 +2,7 @@
 
 #include <hyprutils/cli/Logger.hpp>
 #include <utility>
+#include "DisplayLog.hpp"
 
 #include "../../helpers/memory/Memory.hpp"
 #include "../../helpers/env/Env.hpp"
@@ -12,6 +13,8 @@ namespace Log {
         CLogger();
         ~CLogger() = default;
 
+        void displayEvent(const std::string_view& str);
+        void backendLog(Hyprutils::CLI::eLogLevel level, const std::string_view& str);
         void initIS(const std::string_view& IS);
         void initCallbacks();
 
@@ -20,7 +23,8 @@ namespace Log {
         template <typename... Args>
         //NOLINTNEXTLINE
         void log(Hyprutils::CLI::eLogLevel level, std::format_string<Args...> fmt, Args&&... args) {
-            if (!m_logsEnabled)
+
+            if (!m_logsEnabled && level < Hyprutils::CLI::LOG_WARN)
                 return;
 
             if (level == Hyprutils::CLI::LOG_TRACE && !m_isTrace)
@@ -38,6 +42,7 @@ namespace Log {
       private:
         void                    recheckCfg();
 
+        Tamlinux::CDisplayLog   m_display;
         Hyprutils::CLI::CLogger m_logger;
         bool                    m_logsEnabled = true;
         bool                    m_isTrace     = false;

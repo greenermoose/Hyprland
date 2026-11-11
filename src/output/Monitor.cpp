@@ -1496,7 +1496,7 @@ void CMonitor::changeWorkspace(const PHLWORKSPACE& pWorkspace, bool internal, bo
     if (pWorkspace == m_activeWorkspace)
         return;
 
-    if (!internal) {
+    if (!internal && !noFocus) {
         g_pInputManager->unconstrainMouse();
         g_pInputManager->m_emptyFocusCursorSet = false;
         g_pInputManager->releaseAllMouseButtons();

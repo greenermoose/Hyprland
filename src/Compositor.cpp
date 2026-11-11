@@ -301,10 +301,14 @@ void CCompositor::initServer(std::string socketName, int socketFd) {
     wl_display_set_default_max_buffer_size(m_wlDisplay, 1_MB);
 
     Aquamarine::SBackendOptions           options{};
-    SP<Hyprutils::CLI::CLoggerConnection> conn = makeShared<Hyprutils::CLI::CLoggerConnection>(Log::logger->hu());
-    conn->setLogLevel(Log::DEBUG);
-    conn->setName("aquamarine");
-    options.logConnection = std::move(conn);
+    options.logFunction = [](Aquamarine::eBackendLogLevel level, std::string message) {
+        const auto severity = level == Aquamarine::AQ_LOG_CRITICAL ? Log::CRIT :
+            level == Aquamarine::AQ_LOG_ERROR                      ? Log::ERR :
+            level == Aquamarine::AQ_LOG_WARNING                    ? Log::WARN :
+            level == Aquamarine::AQ_LOG_TRACE                      ? Log::TRACE :
+                                                                     Log::DEBUG;
+        Log::logger->backendLog(severity, message);
+    };
 
     std::vector<Aquamarine::SBackendImplementationOptions> implementations;
     Aquamarine::SBackendImplementationOptions              option;

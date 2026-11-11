@@ -11,6 +11,8 @@
 #include "../../../managers/fullscreen/FullscreenController.hpp"
 #include "../../../state/MonitorState.hpp"
 #include "../../../state/WorkspaceState.hpp"
+#include "../../../state/WorkspacePlacementController.hpp"
+#include "../../../output/Monitor.hpp"
 #include "../../../devices/IKeyboard.hpp"
 #include "../../../desktop/rule/windowRule/WindowRule.hpp"
 #include "config/shared/actions/ConfigActions.hpp"
@@ -1328,6 +1330,49 @@ static int hlWorkspaceMove(lua_State* L) {
     return 1;
 }
 
+// Output-targeted activation. Never borrow focus or move the input cursor.
+static int dsp_selectOutputWorkspace(lua_State* L) {
+    const auto mon = State::monitorState()->query().name(lua_tostring(L, lua_upvalueindex(2))).run();
+    if (!mon)
+        return Internal::dispatcherError(L, "Output unavailable", WARN, C_NOTFOUND);
+    const auto id      = static_cast<WORKSPACEID>(lua_tointeger(L, lua_upvalueindex(1)));
+    auto       ws      = State::workspaceState()->query().id(id).run();
+    const auto focused = Desktop::focusState()->monitor();
+    if (ws && ws->m_monitor != mon) {
+        // Moving the active workspace away from the keyboard owner would
+        // necessarily displace input. Refuse rather than focus and restore.
+        const auto old = ws->m_monitor.lock();
+        if (old && old == focused && old->m_activeWorkspace == ws)
+            return Internal::dispatcherError(L, "Workspace owns keyboard focus", WARN, C_UNAVAIL);
+        State::workspacePlacementController()->moveWorkspaceToMonitor(ws, mon, true);
+    }
+    if (!ws)
+        ws = State::workspaceState()->create(id, mon->m_id, std::to_string(id));
+    if (!ws || ws->m_monitor != mon)
+        return Internal::dispatcherError(L, "Workspace assignment failed", WARN, C_UNAVAIL);
+    mon->changeWorkspace(ws, false, true, mon != focused);
+    Log::logger->displayEvent(std::format("event=workspace-selected output={} workspace={} input_owner={} input_output_preserved={}", mon->m_name, id,
+                                          focused ? focused->m_name : "unknown", Desktop::focusState()->monitor() == focused));
+    return Internal::pushSuccessResult(L);
+}
+
+static int hlWorkspaceSelect(lua_State* L) {
+    if (!lua_istable(L, 1))
+        return Internal::configError(L, "hl.workspace.select: expected workspace and monitor");
+    const auto id = Internal::requireTableFieldWorkspaceSelector(L, 1, "workspace", "hl.workspace.select");
+    // Deliberately bounded normal numeric IDs, not relative/special selectors.
+    if (id.empty() || id.size() > 3 || id.find_first_not_of("0123456789") != std::string::npos)
+        return Internal::configError(L, "hl.workspace.select: invalid workspace");
+    const auto number = std::stoi(id);
+    if (number < 1 || number > 160)
+        return Internal::configError(L, "hl.workspace.select: workspace out of range");
+    const auto mon = Internal::requireTableFieldMonitorSelector(L, 1, "monitor", "hl.workspace.select");
+    lua_pushinteger(L, number);
+    lua_pushstring(L, mon.c_str());
+    lua_pushcclosure(L, dsp_selectOutputWorkspace, 2);
+    return 1;
+}
+
 static int hlWorkspaceSwapMonitors(lua_State* L) {
     if (!lua_istable(L, 1))
         return Internal::configError(L, "hl.workspace.swap_monitors: expected a table { monitor1, monitor2 }");
@@ -1392,6 +1437,7 @@ void Internal::registerDispatcherBindings(lua_State* L) {
         Internal::setFn(L, "rename", hlWorkspaceRename);
         Internal::setFn(L, "change_id", hlWorkspaceChangeID);
         Internal::setFn(L, "move", hlWorkspaceMove);
+        Internal::setFn(L, "select", hlWorkspaceSelect);
         Internal::setFn(L, "swap_monitors", hlWorkspaceSwapMonitors);
         Internal::setFn(L, "toggle_special", hlWorkspaceToggleSpecial);
         lua_setfield(L, -2, "workspace");
