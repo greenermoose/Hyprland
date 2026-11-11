@@ -76,6 +76,11 @@ void CLogger::backendLog(Hyprutils::CLI::eLogLevel level, const std::string_view
         str.starts_with("drm: Connector ") || str.starts_with("drm: Connecting connector ") || str.starts_with("drm: Disabling output ") || str.starts_with("drm: Modesetting ");
     if (!displayLog().write("aquamarine", priority, str, transition))
         std::fputs("<3>tamlinux backend logging write failed\n", stderr);
+    // Explicit verbose logging remains separate from the bounded timeline.
+    // Its existing configured stdout/file/rolling routes and trace threshold
+    // still apply; the default disabled setting never forwards frame logs.
+    if (m_logsEnabled)
+        m_logger.log(level, "from aquamarine: {}", str);
 }
 
 void CLogger::displayEvent(const std::string_view& str) {
